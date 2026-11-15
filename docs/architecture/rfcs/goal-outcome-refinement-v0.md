@@ -96,9 +96,11 @@ owner. This is semantic Agent guidance, not a prose classifier or a new admissio
 gate. The existing typed authority, stop and replan-discharge rules remain.
 
 Ordinary conversation exposes the revision route when direct user direction
-changes the Goal's purpose or adds a lasting responsibility. For an addition,
-carry the existing commitments into the revised objective and add or update
-the Todo in the same Goal. Preparation retains the owner-review boundary. The native
+changes the current Goal's purpose or adds a lasting responsibility to it. For
+an addition, carry the existing commitments into the revised objective and add
+or update the Todo in the same Goal. An explicit request for a separate Goal
+uses existing Goal creation, including within the same project. Reconcile scope
+conflicts before altering the current objective. Preparation retains the owner-review boundary. The native
 `loopx_collaboration` tool exposes `prepare_goal_objective`, and fixes its
 Goal/Agent/source Turn instead of accepting caller-supplied routing. Preparation
 uses the existing `goal.update` review/apply channel, with no Goal effect.
@@ -152,8 +154,10 @@ do not delete revision or adoption history to make an older reader accept it.
 
 Revisions are exceptional direction changes, not per-Turn maintenance. Ordinary
 progress, Todo/route changes, diagnostic feedback and wording polish do not
-justify a new shared objective. Agents reuse a pending proposal for the same
-objective rather than prompting the owner again or polling. The owner reviews
+justify a new shared objective. Agents share one pending review when objective,
+reason and source match. Each accepted preparation operation stays bound to its
+normalized request and that proposal, including after review. A changed reason
+or source requires a new operation ID. The owner reviews
 semantic necessity; the runtime rejects identical/whitespace-only objectives
 but does not pretend to detect semantic equivalence. An unchanged repeated
 adoption does not write a provider revision. Work changes and peer adoption
@@ -323,7 +327,8 @@ not installed adoption, general atomicity or a model-efficiency claim.
 
 | Event | Default action | Existing mechanism |
 | --- | --- | --- |
-| Direct user adds a lasting responsibility to this project | Retain commitments, revise the current Goal objective, and add or update its Todo | Existing owner revision and Todo operations |
+| Direct user adds a lasting responsibility to the current Goal | Retain commitments, revise the current Goal objective, and add or update its Todo | Existing owner revision and Todo operations |
+| Direct user explicitly requests a separate Goal | Preserve the current Goal and follow the requested scope | Existing Goal creation |
 | Material deliverable or changed success criteria | Refine the matching outcome, retaining prior requirements | Host context + native refinement or skill/CLI bridge |
 | Resume, focus switch, replan | Reuse full requirements, then choose work | Shared work context; missing-source required read only |
 | Meaningful artifact/experiment milestone | Review all retained requirements against actual evidence | One refinement, optionally batched with normal writeback |

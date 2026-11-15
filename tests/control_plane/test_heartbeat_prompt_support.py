@@ -90,8 +90,10 @@ def test_native_profile_long_routes_retain_one_complete_settlement_contract() ->
         "selection_command", "settlement_plan.ordered_steps", "next_cli_actions",
         "identities/effect ids and actual outcomes", "Preserve command flags",
         "truthful evidence", "ambiguous effects need readback/recovery",
-        "Add lasting duties to this Goal's objective and Todo",
-        "retain and refine cumulative requirements",
+        "Add this Goal's lasting duties to its objective and Todo",
+        "Explicit new Goals use creation",
+        "Flag scope conflicts",
+        "Retain/refine cumulative requirements",
         "root continuation, budget and stops",
     ):
         assert obligation in body, obligation

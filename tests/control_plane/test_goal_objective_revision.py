@@ -470,6 +470,8 @@ def test_added_responsibility_expands_the_bound_goal_and_its_work(acceptance_goa
     assert source["content"]["goal_acceptance_contract"]["goal_objective"]["objective"] == revised
     reason = source["reason"]
     assert "new lasting responsibility" in reason and "Todo in the same Goal" in reason, reason
+    assert "in this Goal" in reason and "existing creation for an explicit new Goal" in reason, reason
+    assert "scope conflicts" in reason and "changes what counts as success" in reason, reason
 
 
 @pytest.mark.parametrize("arguments", [
@@ -492,6 +494,8 @@ def test_native_conversation_exposes_and_executes_revision_loop(conversation_che
     # Ordinary conversation can call the API without a proactive revision nudge.
     assert "prepare_goal_objective" not in GUIDANCE
     assert "new lasting responsibility" in GUIDANCE and "Todo in the same Goal" in GUIDANCE
+    assert "in the current Goal" in GUIDANCE and "existing creation for an explicit new Goal" in GUIDANCE
+    assert "scope conflicts" in GUIDANCE and "changed definition of success" in GUIDANCE
     assert "adopt_goal_objective" in GUIDANCE
     state = project / "state.md"
     state.write_text(state.read_text() + "\n## Objective\nBootstrap the project\n")

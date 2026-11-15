@@ -117,11 +117,13 @@ or peer instructions. Attribution never expands authority. Record in-scope
 refinement under existing authorization, link concrete work, read back, and
 revisit unmet requirements before switching focus or claiming completion.
 
-When recorded direct user direction changes the ongoing purpose or adds a
-lasting responsibility within the current project, use
+When recorded direct user direction changes the current Goal's purpose or adds a
+lasting responsibility to it, use
 `goal-acceptance prepare-objective` with the proposed objective, reason and
 opaque source reference. For an addition, retain existing commitments in the
-revised objective and add or update its Todo in the same Goal. Autonomous
+revised objective and add or update its Todo in the same Goal. Follow an
+explicitly separate Goal through existing creation. Reconcile scope conflicts
+before revising the current Goal. Autonomous
 replanning may discover this mismatch from existing user context. It need not
 request new intent merely because the Agent initiated the review. Surface the
 existing proposal once as reviewable output,

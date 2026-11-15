@@ -43,13 +43,16 @@ requirement explicit rather than claiming the check update retired it.
 
 ## Current operating objective
 
-When explicit user direction changes the ongoing purpose or adds a lasting
-responsibility within the current project, prepare an objective proposal for
+When explicit user direction changes the current Goal's purpose or adds a lasting
+responsibility to it, prepare an objective proposal for
 the bound Goal with `goal-acceptance prepare-objective`, the proposed objective,
 reason and original user source reference. For an addition, carry forward the
 current commitments and include the new responsibility in the proposed text.
-Retain earlier requirements, permissions, budgets and stops. Reuse a matching
-pending proposal. Autonomous replanning may discover a mismatch against
+Use existing Goal creation for an explicit request for a separate Goal, including
+within the same project. Reconcile scope conflicts before revision.
+Retain earlier requirements, permissions, budgets and stops. Reuse a pending
+proposal with the same objective, reason and source. Keep the same operation ID
+and original request when retrying. Autonomous replanning may discover a mismatch against
 existing user direction. Surface the proposal
 once with its reason, effect and CLI route, then continue independently
 authorized work under the current objective. A pending proposal is reviewable

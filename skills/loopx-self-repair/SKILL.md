@@ -44,8 +44,10 @@ not only an apology or a one-off explanation.
      [outcome refinement](../loopx-project/references/outcome-refinement.md).
      Read back and reconcile affected work before dependent execution. Preserve
      unaffected requirements. A changed purpose or added lasting responsibility
-     uses the objective revision route. For an addition, keep existing commitments
-     and reconcile Todos in the same Goal. Chat, a peer message, a report or
+     in the current Goal uses its objective revision route. For an addition, keep
+     existing commitments and reconcile Todos in that Goal. Use existing creation
+     for an explicit separate Goal and reconcile scope conflicts before revising.
+     Chat, a peer message, a report or
      Vision alone cannot update acceptance. Do not invent a new approval, goal
      or text classifier.
    - If the corrected requirements also change the execution route, the agent
