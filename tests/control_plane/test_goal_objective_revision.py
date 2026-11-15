@@ -1,5 +1,7 @@
 """Real CLI and conversation effects; scripted callers are not model evidence."""
 import json
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event, get_ident
 
 import pytest
 
@@ -150,6 +152,97 @@ def test_same_objective_with_changed_provenance_prepares_a_distinct_proposal(acc
     assert code == 0 and applied["executed"], applied
     revised = cli("inspect")[1]["goal_acceptance_contract"]["goal_objective"]
     assert {key: revised[key] for key in current} == current
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("reason", "A corrected reason"),
+    ("source_ref", "message:corrected"),
+])
+def test_reused_objective_proposal_binds_the_second_operation(acceptance_goal, field, value):
+    project, _, cli, _ = acceptance_goal
+    prepare_source(project)
+    path = project / "objective.json"
+    document = {"objective": "Maintain reliable exports and recovery",
+        "reason": "The owner added restore drills", "source_ref": "message:owner"}
+    first = ("prepare-objective", "--agent-id", "agent-a", "--document", str(path),
+        "--operation-id", "first-review", "--execute")
+    second = ("prepare-objective", "--agent-id", "agent-b", "--document", str(path),
+        "--operation-id", "shared-review", "--execute")
+    before = cli("inspect")[1]
+    path.write_text(json.dumps(document), encoding="utf-8")
+    code, prepared = cli(*first)
+    assert code == 0, prepared
+    proposal_id = prepared["proposal"]["proposal_id"]
+    code, reused = cli(*second)
+    assert code == 0 and reused["proposal"]["proposal_id"] == proposal_id, reused
+
+    path.write_text(json.dumps({**document, field: value}), encoding="utf-8")
+    code, conflict = cli(*second)
+    assert code == 1 and not conflict["ok"], conflict
+    assert "idempotency key already belongs to another preview" in conflict["error"], conflict
+    path.write_text(json.dumps(document), encoding="utf-8")
+    assert cli(*second)[1]["proposal"]["proposal_id"] == proposal_id
+    assert cli("inspect")[1] == before
+    store = ChatActionStore(project.parent / "runtime" / "chat" / "actions")
+    assert [row["proposal_id"] for row in store.list(goal_id="goal-acceptance")] == [proposal_id]
+
+    code, applied = cli("apply-proposal", "--proposal-id", proposal_id, "--execute")
+    assert code == 0 and applied["executed"], applied
+    code, replayed = cli(*second)
+    assert code == 0 and replayed["proposal"] == applied["proposal"], replayed
+    assert cli("inspect")[1]["goal_acceptance_contract"]["goal_objective"]["revision"] == 1
+
+
+def test_first_concurrent_preparations_share_one_pending_review(acceptance_goal, monkeypatch):
+    from loopx import chat_action_store
+    from loopx.control_plane.goals.goal_objective_actions import prepare_objective_revision
+
+    project, _, _, _ = acceptance_goal
+    prepare_source(project)
+    root = project.parent
+    actions = root / "runtime" / "chat" / "actions" / "actions.json"
+    initializer_ready, peer_arrived, release_initializer = Event(), Event(), Event()
+    initialize = chat_action_store.atomic_write_json
+    lock = chat_action_store.exclusive_file_lock
+    first_thread = None
+
+    def hold_first_write(path, payload, **kwargs):
+        if path == actions and not payload["proposals"] and get_ident() == first_thread:
+            initializer_ready.set()
+            assert release_initializer.wait(20)
+        return initialize(path, payload, **kwargs)
+
+    def notice_peer_lock(path, **kwargs):
+        if path == actions and get_ident() != first_thread and not actions.exists():
+            peer_arrived.set()
+        return lock(path, **kwargs)
+
+    def prepare(agent):
+        nonlocal first_thread
+        if agent == "agent-a":
+            first_thread = get_ident()
+        outcome = prepare_objective_revision(
+            registry_path=root / "registry.json", runtime_root=str(root / "runtime"),
+            goal_id="goal-acceptance", agent_id=agent, operation_id=f"prepare-{agent}",
+            document={"objective": "Maintain reliable exports", "reason": "Preserve recovery",
+                "source_ref": "message:owner"},
+            execute=True,
+        )
+        if agent == "agent-b":
+            peer_arrived.set()
+        return outcome["proposal"]["proposal_id"]
+
+    monkeypatch.setattr(chat_action_store, "atomic_write_json", hold_first_write)
+    monkeypatch.setattr(chat_action_store, "exclusive_file_lock", notice_peer_lock)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(prepare, "agent-a")
+        try:
+            assert initializer_ready.wait(20)
+            second = pool.submit(prepare, "agent-b")
+            assert peer_arrived.wait(20)
+        finally:
+            release_initializer.set()
+        assert first.result(timeout=30) == second.result(timeout=30)
 
 
 def test_native_proposal_owner_apply_and_separate_peer_adoption(acceptance_goal, monkeypatch):

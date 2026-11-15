@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
-from ...chat_action_store import ChatActionStore, ActionConflictError, normalize_idempotency_key
+from ...chat_action_store import ChatActionStore, normalize_idempotency_key
 from ...file_lock import exclusive_file_lock
 from .acceptance import inspect_goal_acceptance, update_goal_objective, public_goal_acceptance, goal_acceptance_route, GoalAcceptanceRoute
 
@@ -67,22 +67,16 @@ def prepare_objective_revision(*, registry_path: Path, runtime_root: str | None,
         _, preview = service._objective_preview(parameters)
         return {**public_goal_acceptance(preview), "prepared": False, "executed": False}
     # Serialize peer preparation; share a pending review of the same revision document.
+    context = {"kind": "goal", "goal_id": goal_id}
     with exclusive_file_lock(service.store.root / f"{goal_id}.objective-proposals", agent_id="loopx-chat", operation="prepare_objective"):
-        rows = service.store.list(goal_id=goal_id, context_kind="goal")
-        prior = next((row for row in rows if row["idempotency_key"] == operation_id), None)
-        if prior is not None:
-            if prior["action_kind"] != "goal.update" or prior["normalized_parameters"] != parameters:
-                raise ActionConflictError("This operation belongs to another objective proposal")
-            return {"ok": True, "prepared": True, "executed": False, "proposal": prior}
-        for row in rows:
-            if (
-                row["action_kind"] == "goal.update"
-                and row["status"] in {"preview_ready", "deferred", "applying"}
-                and all(row["normalized_parameters"].get(field) == parameters[field] for field in document)
-            ):
-                return {"ok": True, "prepared": True, "executed": False, "proposal": row}
-        proposal = service.preview({"action_kind": "goal.update", "summary": document["objective"],
-            "idempotency_key": operation_id, "context": {"kind": "goal", "goal_id": goal_id}, "normalized_parameters": parameters})
+        proposal = service.store.replay_or_reuse_preview(
+            action_kind="goal.update", context=context, normalized_parameters=parameters,
+            idempotency_key=operation_id, shared_fields=("objective", "reason", "source_ref"),
+            reusable_states={"preview_ready", "deferred", "applying"},
+        )
+        if proposal is None:
+            proposal = service.preview({"action_kind": "goal.update", "summary": document["objective"],
+                "idempotency_key": operation_id, "context": context, "normalized_parameters": parameters})
         return {"ok": True, "prepared": True, "executed": False, "proposal": proposal}
 
 
