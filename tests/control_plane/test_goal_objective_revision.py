@@ -1,7 +1,8 @@
 """Real CLI and conversation effects; scripted callers are not model evidence."""
 import json
 from concurrent.futures import ThreadPoolExecutor
-from threading import Event, get_ident
+from http.client import HTTPConnection
+from threading import Event, Thread, get_ident
 
 import pytest
 
@@ -191,6 +192,97 @@ def test_reused_objective_proposal_binds_the_second_operation(acceptance_goal, f
     code, replayed = cli(*second)
     assert code == 0 and replayed["proposal"] == applied["proposal"], replayed
     assert cli("inspect")[1]["goal_acceptance_contract"]["goal_objective"]["revision"] == 1
+
+
+@pytest.mark.parametrize("first_entry", ["cli", "chat"])
+def test_objective_preview_replays_an_accepted_cli_operation_in_chat(acceptance_goal, first_entry):
+    from loopx.chat_server import ChatHTTPServer, ChatRequestHandler
+
+    project, _, cli, _ = acceptance_goal
+    prepare_source(project)
+    goal_id = "goal-acceptance"
+    document = {"objective": "Maintain reliable exports and recovery",
+        "reason": "The owner added restore drills", "source_ref": "message:owner"}
+    path = project / "objective.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    before = cli("inspect")[1]
+    store = ChatActionStore(project.parent / "runtime" / "chat" / "actions")
+    server = ChatHTTPServer(("127.0.0.1", 0), ChatRequestHandler)
+    server.action_store = store
+    server.action_service = ChatActionService(store=store, registry_path=project.parent / "registry.json")
+    server.verbose = False
+    worker = Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+
+    def post(route, body):
+        connection = HTTPConnection("127.0.0.1", server.server_port, timeout=30)
+        try:
+            connection.request("POST", route, json.dumps(body), {"Content-Type": "application/json"})
+            response = connection.getresponse()
+            return response.status, json.loads(response.read())
+        finally:
+            connection.close()
+
+    def prepare_cli(key, agent):
+        code, prepared = cli("prepare-objective", "--agent-id", agent, "--document", str(path),
+            "--operation-id", key, "--execute")
+        assert code == 0 and prepared["prepared"], prepared
+        return prepared["proposal"]
+
+    def request(key, agent):
+        return {"action_kind": "goal.update", "summary": document["objective"],
+            "context": {"kind": "goal", "goal_id": goal_id},
+            "normalized_parameters": {"goal_id": goal_id, "prepared_by": agent, **document},
+            "idempotency_key": key}
+
+    route = "/api/actions/preview"
+    first = request("first-preview", "agent-a")
+    shared = request("shared-preview", "agent-b")
+    try:
+        if first_entry == "chat":
+            code, created = post(route, first)
+            assert code == 201, created
+            proposal = created["proposal"]
+        else:
+            proposal = prepare_cli("first-preview", "agent-a")
+        proposal_id = proposal["proposal_id"]
+        assert prepare_cli("shared-preview", "agent-b") == proposal
+        stored = store.path.read_bytes()
+        for original in (first, shared):
+            code, replay = post(route, original)
+            assert code == 201 and replay["proposal"] == proposal, replay
+        for changes in ({"objective": "Different objective"}, {"reason": "Different reason"},
+                        {"source_ref": "message:other"}, {"prepared_by": "agent-a"}):
+            code, denied = post(route, {**shared,
+                "normalized_parameters": {**shared["normalized_parameters"], **changes}})
+            assert code == 409 and denied["error_code"] == "action_conflict", denied
+        for original in (first, shared):
+            code, denied = post(route, {**original,
+                "context": {**original["context"], "binding_id": "another-binding"}})
+            assert code == 409 and denied["error_code"] == "action_conflict", denied
+        code, denied = post(route, {**shared, "summary": "/tmp/private-note"})
+        assert code == 400 and denied["error_code"] == "invalid_action_preview", denied
+        assert store.path.read_bytes() == stored
+        assert cli("inspect")[1] == before
+
+        code, applied = post(f"/api/actions/{proposal_id}/apply", {})
+        assert code == 200 and applied["proposal"]["status"] == "applied", applied
+        current = cli("inspect")[1]
+        assert current["goal_acceptance_contract"]["goal_objective"]["revision"] == 1
+        snapshot = store.path.read_bytes()
+        for original in (first, shared):
+            code, replay = post(route, original)
+            assert code == 201 and replay["proposal"] == applied["proposal"], replay
+        assert prepare_cli("shared-preview", "agent-b") == applied["proposal"]
+        code, replayed_apply = post(f"/api/actions/{proposal_id}/apply", {})
+        assert code == 200 and replayed_apply["proposal"]["receipt"] == applied["proposal"]["receipt"], replayed_apply
+        assert store.path.read_bytes() == snapshot
+        assert [row["proposal_id"] for row in store.list(goal_id=goal_id)] == [proposal_id]
+        assert cli("inspect")[1] == current
+    finally:
+        server.shutdown()
+        worker.join(timeout=5)
+        server.server_close()
 
 
 def test_first_concurrent_preparations_share_one_pending_review(acceptance_goal, monkeypatch):

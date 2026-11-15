@@ -5,6 +5,7 @@ revision/CAS; Chat stores only the reviewed request and its recovery checkpoint.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -66,18 +67,14 @@ def prepare_objective_revision(*, registry_path: Path, runtime_root: str | None,
     if not execute:
         _, preview = service._objective_preview(parameters)
         return {**public_goal_acceptance(preview), "prepared": False, "executed": False}
-    # Serialize peer preparation; share a pending review of the same revision document.
-    context = {"kind": "goal", "goal_id": goal_id}
-    with exclusive_file_lock(service.store.root / f"{goal_id}.objective-proposals", agent_id="loopx-chat", operation="prepare_objective"):
-        proposal = service.store.replay_or_reuse_preview(
-            action_kind="goal.update", context=context, normalized_parameters=parameters,
-            idempotency_key=operation_id, shared_fields=("objective", "reason", "source_ref"),
-            reusable_states={"preview_ready", "deferred", "applying"},
-        )
-        if proposal is None:
-            proposal = service.preview({"action_kind": "goal.update", "summary": document["objective"],
-                "idempotency_key": operation_id, "context": context, "normalized_parameters": parameters})
-        return {"ok": True, "prepared": True, "executed": False, "proposal": proposal}
+    proposal = service._prepare_objective_preview(
+        parameters=parameters,
+        context={"kind": "goal", "goal_id": goal_id},
+        summary=document["objective"],
+        idempotency_key=operation_id,
+        reuse_pending=True,
+    )
+    return {"ok": True, "prepared": True, "executed": False, "proposal": proposal}
 
 
 class GoalObjectiveActionMixin:
@@ -86,6 +83,52 @@ class GoalObjectiveActionMixin:
 
     def _objective_route(self, goal_id: str) -> GoalAcceptanceRoute:
         return goal_acceptance_route(self.registry_path, goal_id, str(self.store.root.parent.parent))
+
+    def _prepare_objective_preview(
+        self, *, parameters: dict[str, Any], context: Mapping[str, Any],
+        summary: Any, idempotency_key: str, reuse_pending: bool = False,
+    ) -> dict[str, Any]:
+        from ...chat_actions import _text
+
+        goal_id = parameters["goal_id"]
+        if context.get("kind") != "goal" or context.get("goal_id") != goal_id:
+            raise ValueError("objective proposal context must match its Goal")
+
+        preview_summary = None if reuse_pending else _text(summary, field="summary", limit=600)
+        # Both transports resolve accepted operations under the same Goal lock
+        # before consulting the current basis for a new review.
+        with exclusive_file_lock(
+            self.store.root / f"{goal_id}.objective-proposals",
+            agent_id="loopx-chat",
+            operation="prepare_objective",
+        ):
+            existing = self.store.replay_or_reuse_preview(
+                action_kind="goal.update",
+                context=context,
+                normalized_parameters=parameters,
+                idempotency_key=idempotency_key,
+                shared_fields=("objective", "reason", "source_ref"),
+                reusable_states={"preview_ready", "deferred", "applying"} if reuse_pending else set(),
+                require_exact_context=not reuse_pending,
+                summary=preview_summary,
+            )
+            if existing is not None:
+                return existing
+
+            fingerprint, _ = self._objective_preview(parameters)
+            return self.store.create_preview(
+                action_kind="goal.update",
+                summary=preview_summary or _text(summary, field="summary", limit=600),
+                normalized_parameters=parameters,
+                context=context,
+                expected_state_fingerprint=fingerprint,
+                permission_classification="durable_write",
+                validation_evidence=[
+                    "The typed Goal owner validated this current-objective revision. Root commitments, permissions and existing acceptance remain unchanged; peers must adopt the new revision before new execution."
+                ],
+                available_transitions=["apply", "cancel"],
+                idempotency_key=idempotency_key,
+            )
 
     def _objective_preview(self, parameters: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         route = self._objective_route(parameters["goal_id"])

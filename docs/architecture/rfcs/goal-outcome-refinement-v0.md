@@ -156,8 +156,10 @@ Revisions are exceptional direction changes, not per-Turn maintenance. Ordinary
 progress, Todo/route changes, diagnostic feedback and wording polish do not
 justify a new shared objective. Agents share one pending review when objective,
 reason and source match. Each accepted preparation operation stays bound to its
-normalized request and that proposal, including after review. A changed reason
-or source requires a new operation ID. The owner reviews
+normalized request and that proposal. The CLI and Chat preview can recover the
+same accepted operation, including after owner review. The retry must retain
+the Goal, preparing Agent, and proposal provenance. A changed reason or source
+requires a new operation ID. The owner reviews
 semantic necessity; the runtime rejects identical/whitespace-only objectives
 but does not pretend to detect semantic equivalence. An unchanged repeated
 adoption does not write a provider revision. Work changes and peer adoption

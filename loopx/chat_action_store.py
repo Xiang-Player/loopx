@@ -303,8 +303,12 @@ class ChatActionStore:
         idempotency_key: str,
         shared_fields: tuple[str, ...],
         reusable_states: set[str],
+        require_exact_context: bool = False,
+        summary: str | None = None,
     ) -> dict[str, Any] | None:
         """Resolve an accepted request or bind it to an equivalent pending review."""
+        if summary is not None:
+            _safe_json_value(_bounded_text(summary, field="summary"), path="preview.summary")
         key = normalize_idempotency_key(idempotency_key)
         request = _safe_json_value({
             "action_kind": action_kind,
@@ -334,14 +338,18 @@ class ChatActionStore:
                 # Original previews already carry their full normalized request.
                 # Reused previews keep the later request's identity in the index.
                 previous_digest = binding.get("reused_request_digest")
-                same_request = (
-                    previous_digest == digest if previous_digest is not None
-                    else row["normalized_parameters"] == request["normalized_parameters"]
-                )
+                if previous_digest is not None:
+                    same_request = previous_digest == digest
+                else:
+                    same_request = row["normalized_parameters"] == request["normalized_parameters"] and (
+                        not require_exact_context or row.get("context") == request["context"]
+                    )
                 if not matches_scope(row) or not same_request:
                     raise ActionConflictError("idempotency key already belongs to another preview")
                 return row
 
+            if not reusable_states:
+                return None
             pending = max(
                 (
                     row for row in proposals.values()
